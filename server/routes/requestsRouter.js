@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Request = require('../models/Request');
-
+const User = require('../models/User');
 // INLINE AUTH (matches your authRouter.js)
 const auth = (req, res, next) => {
   const token = req.header('Authorization')?.replace('Bearer ', '');
@@ -153,40 +153,27 @@ router.get('/profile/:userId', auth, async (req, res) => {
 });
 
 // GET /api/requests/active-chats
-// 🔥 ACTIVE CHATS ROUTE - FIXED VERSION
-router.get('/active-chats', auth, async (req, res) => {  // ✅ auth (not authenticateToken)
+// ✅ CORRECT FIELD NAMES (matches your POST route):
+router.get('/active-chats', auth, async (req, res) => {
   try {
     console.log('🔍 Getting active chats for:', req.user.id);
-    
-    // Find accepted requests (received OR sent)
-    const requests = await Request.find({
+    const activeChats = await Request.find({
       $or: [
-        { toUser: req.user.id, status: 'accepted' },
-        { fromUser: req.user.id, status: 'accepted' }
+        { fromUser: req.user.id, status: 'accepted' },   // ✅ fromUser
+        { toUser: req.user.id, status: 'accepted' }      // ✅ toUser
       ]
     })
-    .populate('fromUser', 'name')
-    .populate('toUser', 'name')
+    .populate('fromUser toUser fromSkill toSkill')       // ✅ fromUser/toUser
     .sort({ updatedAt: -1 });
-
-    // Format as WhatsApp chats
-    const activeChats = requests.map(request => ({  // ✅ request (not req)
-      _id: request._id,
-      participants: [
-        { _id: request.fromUser._id, name: request.fromUser.name },
-        { _id: request.toUser._id, name: request.toUser.name }
-      ],
-      messages: [],
-      updatedAt: request.updatedAt  // ✅ request.updatedAt
-    }));
-
-    console.log(`✅ ${activeChats.length} active chats found`);
+    
+    console.log(`✅ Found ${activeChats.length} active chats`);
     res.json({ activeChats });
   } catch (error) {
     console.error('❌ Active chats error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: error.message });
   }
 });
+
 
 
 module.exports = router;
