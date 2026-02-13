@@ -3,7 +3,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import VideoCallModal from './VideoCallModal';
 import axios from "axios";
 
-
 const LiveChat = ({ token }) => {
   const { chatId } = useParams();
   const navigate = useNavigate();
@@ -23,40 +22,37 @@ const LiveChat = ({ token }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
-  //const [sentMessages, setSentMessages] = useState(new Set());
   const [uploadingFile, setUploadingFile] = useState(null);
   
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const ws = useRef(null);
+  const API_BASE = 'https://skillswap-backend.onrender.com';
+  const WS_URL = 'wss://skillswap-backend.onrender.com/ws';
 
-  // 🔥 VIDEO TOKEN - FIXED
- // 🔥 LINES 37-50: ADD chatId!
-const startVideoLesson = async () => {
-  if (!currentUserId) {
-    alert('Please wait for chat to load');
-    return;
-  }
-  
-  try {
-    console.log('🎥 Starting video lesson... chatId:', chatId);
-const res = await axios.post('http://localhost:5000/api/chat/generate-token', {
-      chatId,                     // 🔥 ADD THIS LINE!
-      // userId: currentUserId,
-      // userName: currentUser?.name || 'Student'
-    }, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+  // 🔥 VIDEO TOKEN
+  const startVideoLesson = useCallback(async () => {
+    if (!currentUserId) {
+      alert('Please wait for chat to load');
+      return;
+    }
     
-    setVideoToken(res.data.token);
-    setMeetingId(res.data.meetingId);
-    setShowVideoCall(true);
-  } catch(err) {
-    console.error('❌ Video error:', err);
-    alert('Video setup failed');
-  }
-};
-
+    try {
+      console.log('🎥 Starting video lesson... chatId:', chatId);
+      const res = await axios.post(`${API_BASE}/api/chat/generate-token`, {
+        chatId,
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setVideoToken(res.data.token);
+      setMeetingId(res.data.meetingId);
+      setShowVideoCall(true);
+    } catch(err) {
+      console.error('❌ Video error:', err);
+      alert('Video setup failed');
+    }
+  }, [currentUserId, chatId, token, API_BASE]);
 
   // 🔥 FETCH CHAT
   const fetchChat = useCallback(async () => {
@@ -65,7 +61,7 @@ const res = await axios.post('http://localhost:5000/api/chat/generate-token', {
     try {
       setLoadingChat(true);
       setError(null);
-      const res = await axios.get(`http://localhost:5000/api/chat/request/${chatId}`, {
+      const res = await axios.get(`${API_BASE}/api/chat/request/${chatId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -78,11 +74,7 @@ const res = await axios.post('http://localhost:5000/api/chat/generate-token', {
     } finally {
       setLoadingChat(false);
     }
-  }, [chatId, token]);
-
-  useEffect(() => {
-    if (chatId) fetchChat();
-  }, [chatId, fetchChat]);
+  }, [chatId, token, API_BASE]);
 
   // 🔥 CURRENT USER
   useEffect(() => {
@@ -95,7 +87,12 @@ const res = await axios.post('http://localhost:5000/api/chat/generate-token', {
     }
   }, []);
 
-  // 🔥 SCROLL
+  // 🔥 FETCH CHAT ON MOUNT
+  useEffect(() => {
+    if (chatId) fetchChat();
+  }, [chatId, fetchChat]);
+
+  // 🔥 SCROLL TO BOTTOM
   const scrollToBottom = useCallback(() => {
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
@@ -107,7 +104,7 @@ const res = await axios.post('http://localhost:5000/api/chat/generate-token', {
   }, [messages, scrollToBottom]);
 
   // 🔥 SEND MESSAGE
-  const sendMessage = () => {
+  const sendMessage = useCallback(() => {
     if (!newMessage.trim() || !currentUser?._id || uploadingFile) return;
     
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -119,10 +116,9 @@ const res = await axios.post('http://localhost:5000/api/chat/generate-token', {
       timestamp: new Date()
     };
     
-   // setSentMessages(prev => new Set([...prev, tempId]));
     setMessages(prev => [...prev, optimisticMessage]);
     setNewMessage('');
-    
+
     if (ws.current?.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify({
         type: 'message',
@@ -132,10 +128,10 @@ const res = await axios.post('http://localhost:5000/api/chat/generate-token', {
         senderName: currentUser.name
       }));
     }
-  };
+  }, [newMessage, currentUser, chatId, uploadingFile]);
 
   // 🔥 FILE UPLOAD
-  const handleFileUpload = async (e) => {
+  const handleFileUpload = useCallback(async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
     
@@ -162,7 +158,7 @@ const res = await axios.post('http://localhost:5000/api/chat/generate-token', {
     formData.append('file', file);
     
     try {
-      const res = await axios.post('http://localhost:5000/api/chat/upload', formData, {
+      const res = await axios.post(`${API_BASE}/api/chat/upload`, formData, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'
@@ -187,112 +183,101 @@ const res = await axios.post('http://localhost:5000/api/chat/generate-token', {
       setMessages(prev => prev.map(msg => msg._id === tempId ? { ...msg, error: true } : msg));
       setUploadingFile(null);
     }
-  };
+  }, [currentUser, chatId, token, API_BASE, scrollToBottom]);
 
-  // 🔥 WEBSOCKET
-  // 🔥 WEBSOCKET - FIXED SCOPING
-useEffect(() => {
-  if (!chatId || !currentUserId) return;
+  // 🔥 WEBSOCKET - FIXED ESLint
+  useEffect(() => {
+    if (!chatId || !currentUserId) return;
 
-  const connectWS = () => {
-    if (ws.current?.readyState === WebSocket.OPEN) ws.current.close();
-    
-    ws.current = new WebSocket('ws://localhost:5000/ws');
+    const connectWS = () => {
+      if (ws.current?.readyState === WebSocket.OPEN) ws.current.close();
+      
+      ws.current = new WebSocket(WS_URL);
 
-    ws.current.onopen = () => {
-      setIsConnected(true);
-      console.log('🔌 WS Connected → JOIN:', chatId);
-      ws.current.send(JSON.stringify({
-        type: 'join',
-        userId: currentUserId,
-        chatRoomId: chatId  // Remove token - backend doesn't need it
-      }));
+      ws.current.onopen = () => {
+        setIsConnected(true);
+        console.log('🔌 WS Connected → JOIN:', chatId);
+        ws.current.send(JSON.stringify({
+          type: 'join',
+          userId: currentUserId,
+          chatRoomId: chatId
+        }));
+      };
+
+      ws.current.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('📨 WS RECEIVED:', data.type, 'chatId:', data.chatRoomId);
+          
+          if (data.type === 'video-started' && data.chatRoomId === chatId) {
+            console.log('🎥 INVITE NOTIFIED:', data);
+            setVideoToken(data.token);
+            setMeetingId(data.meetingId);
+            
+            setMessages(prev => [...prev, {
+              type: 'system',
+              content: `${data.senderName} started video lesson! ✨ Click to JOIN`,
+              senderId: data.senderId,
+              senderName: data.senderName,
+              meetingId: data.meetingId,
+              videoToken: data.token,
+              createdAt: new Date()
+            }]);
+            return;
+          }
+
+          if (data.type === 'message' && data.chatRoomId === chatId && data.senderId !== currentUserId) {
+            const messageData = {
+              _id: data._id || `ws-${Date.now()}`,
+              content: data.content,
+              senderId: data.senderId,
+              senderName: data.senderName,
+              timestamp: new Date(data.timestamp)
+            };
+            setMessages(prev => [...prev, messageData]);
+          }
+          
+          if (data.type === 'file' && data.chatRoomId === chatId) {
+            setMessages(prev => [...prev, {
+              _id: data._id,
+              type: 'file',
+              filename: data.filename,
+              filesize: data.filesize,
+              fileUrl: `${API_BASE}${data.fileUrl}`,
+              senderId: data.senderId,
+              senderName: data.senderName,
+              timestamp: new Date(data.timestamp)
+            }]);
+          }
+        } catch(e) {
+          console.error('❌ WS parse error:', e);
+        }
+      };
+
+      ws.current.onclose = () => {
+        console.log('🔌 WS Disconnected');
+        setIsConnected(false);
+        setTimeout(connectWS, 2000);
+      };
+
+      ws.current.onerror = (error) => {
+        console.error('❌ WS Error:', error);
+      };
     };
 
-    // 🔥 FIXED: Move onmessage INSIDE connectWS
-    ws.current.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        console.log('📨 WS RECEIVED:', data.type, 'chatId:', data.chatRoomId);
-        
-       // LINE 220: WebSocket video-started handler
-if (data.type === 'video-started' && data.chatRoomId === chatId) {
-  console.log('🎥 INVITE NOTIFIED:', data);
-  
-  // ✅ Backend sends THESE field names:
-  setVideoToken(data.token);      // ← FIXED: data.token (NOT videoToken)
-  setMeetingId(data.meetingId);   // ← CORRECT
-  
-  setMessages(prev => [...prev, {
-    type: 'system',
-    content: `${data.senderName} started video lesson! ✨ Click to JOIN`,
-    senderId: data.senderId,
-    senderName: data.senderName,
-    meetingId: data.meetingId,    // ← For clickable purple message
-    videoToken: data.token,       // ← For clickable purple message  
-    createdAt: new Date()
-  }]);
-  return;
-}
+    connectWS();
 
-
-        
-        // Regular messages
-        if (data.type === 'message' && data.chatRoomId === chatId && data.senderId !== currentUserId) {
-          const messageData = {
-            _id: data._id || `ws-${Date.now()}`,
-            content: data.content,
-            senderId: data.senderId,
-            senderName: data.senderName,
-            timestamp: new Date(data.timestamp)
-          };
-          setMessages(prev => [...prev, messageData]);
-        }
-        
-        // File messages
-        if (data.type === 'file' && data.chatRoomId === chatId) {
-          setMessages(prev => [...prev, {
-            _id: data._id,
-            type: 'file',
-            filename: data.filename,
-            filesize: data.filesize,
-            fileUrl: `http://localhost:5000${data.fileUrl}`,
-            senderId: data.senderId,
-            senderName: data.senderName,
-            timestamp: new Date(data.timestamp)
-          }]);
-        }
-        
-      } catch(e) {
-        console.error('❌ WS parse error:', e);
+    return () => {
+      if (ws.current) {
+        ws.current.close();
       }
     };
+  }, [chatId, currentUserId, API_BASE]); // ✅ FIXED: Proper deps
 
-    ws.current.onclose = () => {
-      console.log('🔌 WS Disconnected');
-      setIsConnected(false);
-      setTimeout(connectWS, 2000);
-    };
-
-    ws.current.onerror = (error) => {
-      console.error('❌ WS Error:', error);
-    };
-  };
-
-  connectWS();
-
-  return () => {
-    if (ws.current) {
-      ws.current.close();
-    }
-  };
-}, [chatId, currentUserId]);
-
-
-  const goBack = () => {
+  const goBack = useCallback(() => {
     if (ws.current) ws.current.close();
     navigate('/chatrooms');
-  };
+  }, [navigate]);
 
   if (loading || !currentUserId || loadingChat) {
     return (
@@ -369,42 +354,40 @@ if (data.type === 'video-started' && data.chatRoomId === chatId) {
           {messages.map((msg, idx) => {
             const messageId = msg._id || `msg-${idx}`;
             const isOwnMessage = msg.senderId === currentUserId || msg.sender?._id === currentUserId;
-            
 
-            // 🔥 ADD THIS BLOCK BEFORE if (msg.type === 'file')
-if (msg.type === 'system') {
-  return (
-     <div key={messageId}> 
-    <div style={{ 
-      alignSelf: "center", maxWidth: "80%", margin: "20px 0",
-      background: "linear-gradient(135deg, #667eea, #764ba2)",
-      padding: "16px 24px", borderRadius: 25, textAlign: "center",
-      border: "2px solid rgba(255,255,255,0.2)",
-      cursor: "pointer",  // 🔥 CLICKABLE!
-      transition: "all 0.2s ease"
-    }}
-   onClick={() => {
-        if (msg.videoToken && msg.meetingId) {
-          console.log(`${msg.senderName} invite accepted!`);
-          setVideoToken(msg.videoToken);
-          setMeetingId(msg.meetingId);
-          setShowVideoCall(true);
-        }
-      }}
-    
-    onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.02)"}
-    onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
-    >
-      <div style={{ color: "white", fontWeight: 700, fontSize: 15 }}>
-        🎥 {msg.content} 
-        <span style={{ fontSize: 12, fontWeight: 400, display: "block", marginTop: 4 }}>
-           ✨ <strong>Click to JOIN Video Lesson</strong>
-        </span>
-      </div>
-    </div>
-     </div>
-  );
-}
+            // 🔥 SYSTEM VIDEO MESSAGE - CLICKABLE
+            if (msg.type === 'system') {
+              return (
+                <div key={messageId}> 
+                  <div style={{ 
+                    alignSelf: "center", maxWidth: "80%", margin: "20px 0",
+                    background: "linear-gradient(135deg, #667eea, #764ba2)",
+                    padding: "16px 24px", borderRadius: 25, textAlign: "center",
+                    border: "2px solid rgba(255,255,255,0.2)",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease"
+                  }}
+                  onClick={() => {
+                    if (msg.videoToken && msg.meetingId) {
+                      console.log(`${msg.senderName} invite accepted!`);
+                      setVideoToken(msg.videoToken);
+                      setMeetingId(msg.meetingId);
+                      setShowVideoCall(true);
+                    }
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.02)"}
+                  onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
+                  >
+                    <div style={{ color: "white", fontWeight: 700, fontSize: 15 }}>
+                      🎥 {msg.content} 
+                      <span style={{ fontSize: 12, fontWeight: 400, display: "block", marginTop: 4 }}>
+                        ✨ <strong>Click to JOIN Video Lesson</strong>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
 
             if (msg.type === 'file') {
               return (
@@ -437,7 +420,7 @@ if (msg.type === 'system') {
                           {msg.filesize || 'File'}
                         </div>
                         <a 
-                          href={`http://localhost:5000${msg.fileUrl}`} 
+                          href={`${API_BASE}${msg.fileUrl}`}
                           download={msg.filename}
                           style={{
                             background: '#00d4ff', color: 'white', padding: '10px 20px',
@@ -527,7 +510,6 @@ if (msg.type === 'system') {
             </button>
           </div>
 
-          {/* 🔥 VIDEO BUTTON */}
           <button 
             onClick={startVideoLesson}
             disabled={!currentUserId || !isConnected}
@@ -554,29 +536,20 @@ if (msg.type === 'system') {
         `}</style>
       </div>
 
-      {/* 🔥 VIDEO CALL MODAL */}
-      
       {showVideoCall && videoToken && meetingId && (
-  <VideoCallModal
-    meetingId={meetingId}
-    token={videoToken}
-    currentUserName={currentUser?.name}
-    onLeave={() => {
-      setShowVideoCall(false);
-      setVideoToken(null);
-      setMeetingId(null);
-    }}
-  />
-)}
-      
-      
-      
-     
+        <VideoCallModal
+          meetingId={meetingId}
+          token={videoToken}
+          currentUserName={currentUser?.name}
+          onLeave={() => {
+            setShowVideoCall(false);
+            setVideoToken(null);
+            setMeetingId(null);
+          }}
+        />
+      )}
     </>
   );
 };
-
-
-
 
 export default LiveChat;

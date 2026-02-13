@@ -5,46 +5,51 @@ import axios from 'axios';
 const Requests = ({ token }) => {
   const [sentRequests, setSentRequests] = useState([]);
   const [receivedRequests, setReceivedRequests] = useState([]);
-  const [totalRequests, setTotalRequests] = useState(0);
-
+  //const [totalRequests, setTotalRequests] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('requests');
 
+  // ✅ VERCEL: PRODUCTION BACKEND URL
+  const API_BASE = 'https://skillswap-backend.onrender.com/api';
+
   useEffect(() => {
     fetchRequests();
-  }, [refreshKey, token]);
+  }, [fetchRequests,refreshKey, token]);
 
   const fetchRequests = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/requests/me', {
-        headers: { Authorization: `Bearer ${token}` }
+      const res = await axios.get(`${API_BASE}/requests/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 15000 // Vercel timeout for Render cold starts
       });
       setSentRequests(res.data.sentRequests || []);
       setReceivedRequests(res.data.receivedRequests || []);
-
-       // setTotalRequests((res.data.sentRequests?.length || 0) + (res.data.receivedRequests?.length || 0));
-
     } catch (err) {
-      console.error('Requests fetch error:', err);
+      console.error('Requests fetch error:', err.response?.data || err.message);
+      if (err.response?.status === 401) {
+        localStorage.removeItem('token');
+        navigate('/');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-     useEffect(() => {
-  // ✅ CALCULATE after BOTH states update!
-  setTotalRequests(sentRequests.length + receivedRequests.length);
-}, [sentRequests, receivedRequests]);
+  // useEffect(() => {
+  //   // ✅ CALCULATE after BOTH states update!
+  //   setTotalRequests(sentRequests.length + receivedRequests.length);
+  // }, [sentRequests, receivedRequests]);
 
   // ✅ PERFECT Accept with Popup
   const handleAccept = async (requestId, fromUserName) => {
     try {
-      const res = await axios.put(`http://localhost:5000/api/requests/${requestId}/status`, {
+      const res = await axios.put(`${API_BASE}/requests/${requestId}/status`, {
         status: 'accepted'
       }, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 10000
       });
       
       console.log('✅ Accepted! Chat created:', res.data.chatRoomId);
@@ -54,21 +59,34 @@ const Requests = ({ token }) => {
       
       setRefreshKey(prev => prev + 1); // Refresh list
     } catch (err) {
-      console.error('Accept error:', err);
-      alert('Failed to accept request');
+      console.error('Accept error:', err.response?.data || err.message);
+      
+      if (err.code === 'ECONNABORTED') {
+        alert('Server slow. Please try again.');
+      } else {
+        alert('Failed to accept request');
+      }
     }
   };
 
   const handleReject = async (requestId) => {
     try {
-      await axios.put(`http://localhost:5000/api/requests/${requestId}/status`, 
+      await axios.put(`${API_BASE}/requests/${requestId}/status`, 
         { status: 'rejected' }, 
-        { headers: { Authorization: `Bearer ${token}` } }
+        { 
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 10000
+        }
       );
       setRefreshKey(prev => prev + 1);
       alert('❌ Request rejected');
     } catch (err) {
-      alert('Failed to reject');
+      console.error('Reject error:', err);
+      if (err.code === 'ECONNABORTED') {
+        alert('Server slow. Please try again.');
+      } else {
+        alert('Failed to reject');
+      }
     }
   };
 
@@ -147,13 +165,13 @@ const Requests = ({ token }) => {
           marginBottom: '48px' 
         }}>
           <h1 style={{ 
-            fontSize: '36px', 
+            fontSize: 'clamp(28px, 5vw, 36px)', 
             fontWeight: '800', 
             background: 'linear-gradient(135deg, #00d4ff, #60f0ff)', 
             WebkitBackgroundClip: 'text', 
             WebkitTextFillColor: 'transparent' 
           }}>
-            📋 Requests & Status
+            📋 Requests & Status ({sentRequests.length + receivedRequests.length})
           </h1>
           <Link to="/dashboard" style={{ 
             background: 'rgba(255,255,255,0.2)', 
@@ -162,8 +180,18 @@ const Requests = ({ token }) => {
             borderRadius: '30px', 
             textDecoration: 'none',
             fontWeight: '600',
-            backdropFilter: 'blur(10px)'
-          }}>
+            backdropFilter: 'blur(10px)',
+            transition: 'all 0.3s ease'
+          }}
+          onMouseOver={(e) => {
+            e.target.style.background = 'rgba(255,255,255,0.3)';
+            e.target.style.transform = 'translateY(-2px)';
+          }}
+          onMouseOut={(e) => {
+            e.target.style.background = 'rgba(255,255,255,0.2)';
+            e.target.style.transform = 'translateY(0)';
+          }}
+          >
             ← Dashboard
           </Link>
         </div>
@@ -177,7 +205,7 @@ const Requests = ({ token }) => {
           border: '1px solid rgba(255,255,255,0.2)',
           backdropFilter: 'blur(20px)'
         }}>
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '32px' }}>
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '32px', flexWrap: 'wrap' }}>
             <button onClick={() => setActiveTab('requests')} style={{
               padding: '16px 40px',
               background: activeTab === 'requests' ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(255,255,255,0.15)',
@@ -187,8 +215,12 @@ const Requests = ({ token }) => {
               fontWeight: '700',
               fontSize: '16px',
               cursor: 'pointer',
-              boxShadow: activeTab === 'requests' ? '0 8px 25px rgba(16,185,129,0.4)' : 'none'
-            }}>
+              boxShadow: activeTab === 'requests' ? '0 8px 25px rgba(16,185,129,0.4)' : 'none',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseOver={(e) => activeTab !== 'requests' && (e.target.style.background = 'rgba(255,255,255,0.25)')}
+            onMouseOut={(e) => activeTab !== 'requests' && (e.target.style.background = 'rgba(255,255,255,0.15)')}
+            >
               📋 Requests ({receivedRequests.filter(r => r.status === 'pending').length})
             </button>
             <button onClick={() => setActiveTab('sent')} style={{
@@ -200,8 +232,12 @@ const Requests = ({ token }) => {
               fontWeight: '700',
               fontSize: '16px',
               cursor: 'pointer',
-              boxShadow: activeTab === 'sent' ? '0 8px 25px rgba(16,185,129,0.4)' : 'none'
-            }}>
+              boxShadow: activeTab === 'sent' ? '0 8px 25px rgba(16,185,129,0.4)' : 'none',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseOver={(e) => activeTab !== 'sent' && (e.target.style.background = 'rgba(255,255,255,0.25)')}
+            onMouseOut={(e) => activeTab !== 'sent' && (e.target.style.background = 'rgba(255,255,255,0.15)')}
+            >
               📤 Sent ({sentRequests.length})
             </button>
           </div>
@@ -210,7 +246,7 @@ const Requests = ({ token }) => {
           {activeTab === 'requests' && (
             <div>
               <h3 style={{ 
-                fontSize: '28px', 
+                fontSize: 'clamp(24px, 4vw, 28px)', 
                 marginBottom: '32px', 
                 color: '#00d4ff',
                 background: 'linear-gradient(135deg, #00d4ff, #60f0ff)',
@@ -352,31 +388,56 @@ const Requests = ({ token }) => {
           {activeTab === 'sent' && (
             <div>
               <h3 style={{ 
-                fontSize: '28px', 
+                fontSize: 'clamp(24px, 4vw, 28px)', 
                 marginBottom: '32px', 
-                color: '#00d4ff'
+                color: '#00d4ff',
+                background: 'linear-gradient(135deg, #00d4ff, #60f0ff)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent'
               }}>
                 📤 Your Sent Requests ({sentRequests.length})
               </h3>
-              {sentRequests.map(request => (
-                <div key={request._id} style={{
-                  background: 'rgba(255,255,255,0.12)',
-                  padding: '24px',
-                  borderRadius: '20px',
-                  marginBottom: '16px'
+              {sentRequests.length === 0 ? (
+                <div style={{ 
+                  textAlign: 'center', 
+                  padding: '80px 40px', 
+                  color: 'rgba(255,255,255,0.6)' 
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <div>
-                      <h4>{request.toUser?.name}</h4>
-                      <p>{request.fromSkill?.title} ↔ {request.toSkill?.title}</p>
-                      {renderStatusBadge(request.status)}
-                    </div>
-                    <span style={{ opacity: 0.7 }}>
-                      {new Date(request.createdAt).toLocaleDateString()}
-                    </span>
-                  </div>
+                  <div style={{ fontSize: '64px', marginBottom: '24px' }}>📤</div>
+                  <h3 style={{ fontSize: '24px', marginBottom: '12px' }}>No sent requests</h3>
+                  <p style={{ fontSize: '16px' }}>Find skills to swap in Skill Matching!</p>
                 </div>
-              ))}
+              ) : (
+                sentRequests.map(request => (
+                  <div key={request._id} style={{
+                    background: 'rgba(255,255,255,0.12)',
+                    padding: '24px',
+                    borderRadius: '20px',
+                    marginBottom: '16px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    backdropFilter: 'blur(10px)'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                      <div style={{ flex: 1 }}>
+                        <h4 style={{ margin: '0 0 8px 0', fontSize: '20px', color: '#fff' }}>
+                          {request.toUser?.name}
+                        </h4>
+                        <p style={{ margin: '0 0 12px 0', color: 'rgba(255,255,255,0.9)', fontSize: '16px' }}>
+                          {request.fromSkill?.title} ↔ {request.toSkill?.title}
+                        </p>
+                        {renderStatusBadge(request.status)}
+                      </div>
+                      <span style={{ 
+                        color: 'rgba(255,255,255,0.7)',
+                        fontSize: '14px',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {new Date(request.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </div>
@@ -386,6 +447,16 @@ const Requests = ({ token }) => {
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+        @media (max-width: 768px) {
+          div[style*="padding: 48px 24px"] {
+            padding: 32px 16px !important;
+          }
+          div[style*="display: flex"][style*="justifyContent: space-between"] {
+            flex-direction: column !important;
+            gap: 24px !important;
+            text-align: center;
+          }
         }
       `}</style>
     </div>

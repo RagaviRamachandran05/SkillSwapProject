@@ -10,6 +10,24 @@ const ChatRooms = ({ token }) => {
   const [currentUserId, setCurrentUserId] = useState(null);
   const ws = useRef(null);
   const reconnectTimeoutRef = useRef(null);
+  
+  const API_BASE = 'https://skillswap-backend.onrender.com';
+  const WS_URL = 'wss://skillswap-backend.onrender.com/ws';
+
+  // 🔥 Fetch active chats
+  const fetchChatRooms = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/api/requests/active-chats`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      console.log('✅ CHATS LOADED:', res.data.activeChats?.length);
+      setChatRooms(res.data.activeChats || []);
+    } catch (err) {
+      console.error('❌ ChatRooms ERROR:', err.response?.status, err.response?.data || err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
 
   // 🔥 Get current user ID from token
   useEffect(() => {
@@ -24,17 +42,15 @@ const ChatRooms = ({ token }) => {
 
   // 🔥 FIXED WebSocket - No more reconnect loop
   const connectWS = useCallback(() => {
-    // Clear existing timeout
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
     }
 
-    // Close existing connection
     if (ws.current) {
       ws.current.close();
     }
 
-    ws.current = new WebSocket('ws://localhost:5000/ws');
+    ws.current = new WebSocket(WS_URL);
 
     ws.current.onopen = () => {
       console.log('🔌 ChatRooms WS connected');
@@ -69,7 +85,6 @@ const ChatRooms = ({ token }) => {
 
     ws.current.onclose = () => {
       console.log('🔌 WS disconnected');
-      // Single reconnect attempt after 3s
       reconnectTimeoutRef.current = setTimeout(() => {
         if (!currentUserId) return;
         console.log('🔄 Reconnecting WS...');
@@ -82,6 +97,7 @@ const ChatRooms = ({ token }) => {
     };
   }, [currentUserId, token]);
 
+  // 🔥 WebSocket connection effect - FIXED ESLint
   useEffect(() => {
     if (!currentUserId) return;
     connectWS();
@@ -94,28 +110,14 @@ const ChatRooms = ({ token }) => {
         ws.current.close();
       }
     };
-  }, [connectWS]);
+  }, [connectWS, currentUserId]); // ✅ FIXED: Added currentUserId
 
-  // 🔥 Fetch active chats
+  // 🔥 Fetch chats every 5s
   useEffect(() => {
-    const fetchChatRooms = async () => {
-      try {
-        const res = await axios.get('http://localhost:5000/api/requests/active-chats', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        console.log('✅ CHATS LOADED:', res.data.activeChats?.length);
-        setChatRooms(res.data.activeChats || []);
-      } catch (err) {
-        console.error('❌ ChatRooms ERROR:', err.response?.status, err.response?.data || err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchChatRooms();
     const interval = setInterval(fetchChatRooms, 5000);
     return () => clearInterval(interval);
-  }, [token]);
+  }, [fetchChatRooms]);
 
   if (loading || !currentUserId) {
     return (
@@ -170,7 +172,6 @@ const ChatRooms = ({ token }) => {
         <button 
           onClick={() => navigate('/dashboard')} 
           style={{
-            background: 'rgba(255,255,255,0.2)',
             color: 'white',
             padding: '14px 28px',
             border: 'none',
@@ -210,10 +211,10 @@ const ChatRooms = ({ token }) => {
           chatRooms.map((chat) => {
             const participants = chat.participants || [chat.fromUser, chat.toUser].filter(Boolean);
             const partner = participants.find(p => 
-  p?._id?.toString() !== currentUserId?.toString()
-) || 
-(chat.fromUser?._id?.toString() !== currentUserId?.toString() ? chat.fromUser : chat.toUser) ||
-{ name: 'Partner', _id: 'unknown' };
+              p?._id?.toString() !== currentUserId?.toString()
+            ) || 
+            (chat.fromUser?._id?.toString() !== currentUserId?.toString() ? chat.fromUser : chat.toUser) ||
+            { name: 'Partner', _id: 'unknown' };
             
             const isOnline = partner?._id && onlineUsers.has(partner._id);
             const messages = chat.messages || [];
@@ -240,12 +241,13 @@ const ChatRooms = ({ token }) => {
                   e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
                   e.currentTarget.style.transform = 'translateX(4px)';
                 }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.background = unreadCount > 0 ? 'rgba(16,185,129,0.15)' : 'transparent';
-                  e.currentTarget.style.transform = 'translateX(0)';
-                }}
+               onMouseOut={(e) => {
+  e.currentTarget.style.background = unreadCount > 0 ? 'rgba(16,185,129,0.15)' : 'transparent';
+  e.currentTarget.style.transform = 'translateX(0)';  // ✅ PERFECT - NO 'border'
+}}
+
               >
-                {/* AVATAR */}
+                {/* AVATAR - FIXED no duplicate border */}
                 <div style={{
                   width: '56px',
                   height: '56px',

@@ -13,8 +13,7 @@ const jwt = require('jsonwebtoken');
 const LIVE_USERS = new Map();  // userId → ws socket
 
 // 🔥 1. CREATE UPLOADS FOLDER
-const uploadsDir = './uploads';
-if (!fs.existsSync(uploadsDir)) {
+const uploadsDir = path.join(__dirname, 'uploads');if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
   console.log('📁 Created uploads folder');
 }
@@ -50,11 +49,12 @@ const auth = (req, res, next) => {
   if (!token) return res.status(401).json({ error: 'No token provided' });
   
   try {
-    const decoded = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    // Verified against your secret key
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
     req.user = { id: decoded.id, name: decoded.name };
     next();
   } catch (err) {
-    res.status(401).json({ error: 'Invalid token' });
+    res.status(401).json({ error: 'Invalid or expired token' });
   }
 };
 
@@ -62,11 +62,13 @@ const auth = (req, res, next) => {
 const app = express();
 
 // 🔥 4. MIDDLEWARE
-app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
+app.use(cors({ 
+  origin: ['http://localhost:3000', 'https://skill-swap-project-one.vercel.app'], 
+  credentials: true 
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
+app.use('/uploads', express.static(uploadsDir));
 // 🔥 5. FILE UPLOAD ROUTE
 app.post('/api/chat/upload', auth, upload.single('file'), async (req, res) => {
   try {
@@ -179,49 +181,47 @@ console.log('✅ WebSocket attached to Express app');
 // 🔥 9. FIXED WEBSOCKET - PROPERLY CLOSED
 // 🔥 9. LIVE USER TRACKING + SMART INVITES
 
+// 🔥 9. LIVE USER TRACKING + WEBSOCKET LOGIC
 wss.on('connection', (ws) => {
+  ws.isAlive = true;
   console.log('🔌 WS Client connected. Total:', wss.clients.size);
 
-  // 🔥 HEARTBEAT PING (Keep users alive)
-  const pingInterval = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.ping();
-    }
-  }, 30000);
-
-  ws.on('pong', () => ws.isAlive = true);
+  // Handle Pong responses to keep connection alive
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
 
   ws.on('message', async (data) => {
     try {
       const message = JSON.parse(data.toString());
-      console.log('📨 WS:', message.type);
+      console.log('📨 WS Received:', message.type);
       
-      // 🔥 JOIN ROOM + TRACK LIVE USER
+      // 1️⃣ JOIN ROOM + TRACK LIVE USER
       if (message.type === 'join') {
         ws.userId = message.userId;
         ws.chatRoomId = message.chatRoomId;
-        LIVE_USERS.set(message.userId, ws);  // 🔥 ADD TO LIVE USERS
+        LIVE_USERS.set(message.userId, ws); 
         
-        console.log(`✅ ${message.userId} LIVE in ${message.chatRoomId}`);
-        console.log(`👥 LIVE USERS: ${LIVE_USERS.size}`);
+        console.log(`✅ User ${message.userId} is LIVE in Room ${message.chatRoomId}`);
+        console.log(`👥 Total Live Users: ${LIVE_USERS.size}`);
         return;
       }
       
-      // 🔥 NEW: VIDEO INVITE REQUEST (LIVE CHECK)
+      // 2️⃣ VIDEO INVITE REQUEST (WITH LIVE CHECK)
       if (message.type === 'video-invite-request') {
         const receiverWs = LIVE_USERS.get(message.receiverId);
         
-        // 🔥 CHECK: Receiver LIVE?
-        if (!receiverWs) {
+        // CHECK: Is receiver actually online?
+        if (!receiverWs || receiverWs.readyState !== WebSocket.OPEN) {
           ws.send(JSON.stringify({
             type: 'video-invite-failed',
-            message: `❌ ${message.receiverName} is OFFLINE`,
-            timestamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+            message: `❌ ${message.receiverName} is currently OFFLINE`,
+            timestamp: new Date().toLocaleTimeString()
           }));
           return;
         }
 
-        // 🔥 GENERATE TOKEN + TIMESTAMP
+        // GENERATE VIDEOSDK TOKEN
         const meetingId = `skillswap-${message.chatRoomId}-${Date.now()}`;
         const payload = {
           apikey: process.env.VIDEOSDK_API_KEY,
@@ -231,7 +231,8 @@ wss.on('connection', (ws) => {
         };
         
         const token = jwt.sign(payload, process.env.VIDEOSDK_SECRET_KEY, {
-          expiresIn: '120m', algorithm: 'HS256'
+          expiresIn: '120m', 
+          algorithm: 'HS256'
         });
 
         const inviteData = {
@@ -242,42 +243,80 @@ wss.on('connection', (ws) => {
           receiverId: message.receiverId,
           meetingId,
           token,
-          timestamp: new Date().toLocaleString('en-IN', { 
-            timeZone: 'Asia/Kolkata', 
+          timestamp: new Date().toLocaleTimeString('en-IN', { 
             hour: '2-digit', 
             minute: '2-digit' 
           })
         };
 
-        // 🔥 SEND TO RECEIVER (LIVE USER ONLY)
+        // SEND TO RECEIVER
         receiverWs.send(JSON.stringify(inviteData));
         
-        // 🔥 CONFIRM TO SENDER
+        // CONFIRM TO SENDER
         ws.send(JSON.stringify({
           type: 'video-invite-sent',
-          message: `✅ Invite sent to ${message.receiverName} at ${inviteData.timestamp}`,
+          message: `✅ Invite sent to ${message.receiverName}`,
           timestamp: inviteData.timestamp
         }));
         return;
       }
 
-      // 🔥 OLD: Keep your existing message/file handlers...
-      if (message.type === 'message') { /* existing code */ }
-      if (message.type === 'file') { /* existing code */ }
+      // 3️⃣ CHAT MESSAGE HANDLER
+      if (message.type === 'message') {
+        // Broadcast to all clients in the same chat room
+        const broadcastData = JSON.stringify({
+          type: 'new-message',
+          ...message
+        });
+
+        wss.clients.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN && client.chatRoomId === message.chatRoomId) {
+            client.send(broadcastData);
+          }
+        });
+      }
+
+      // 4️⃣ FILE NOTIFICATION HANDLER
+      if (message.type === 'file-uploaded') {
+        wss.clients.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN && client.chatRoomId === message.chatRoomId) {
+            client.send(JSON.stringify({
+              type: 'new-file',
+              ...message
+            }));
+          }
+        });
+      }
       
     } catch (error) {
-      console.error('❌ WS Error:', error);
+      console.error('❌ WS Message Error:', error);
     }
   });
 
+  ws.on('error', (err) => console.error('WS Socket Error:', err));
+
   ws.on('close', () => {
-    // 🔥 REMOVE FROM LIVE USERS
     if (ws.userId) {
       LIVE_USERS.delete(ws.userId);
-      console.log(`❌ ${ws.userId} went OFFLINE. LIVE: ${LIVE_USERS.size}`);
+      console.log(`❌ User ${ws.userId} went OFFLINE. Remaining: ${LIVE_USERS.size}`);
     }
-    clearInterval(pingInterval);
   });
+});
+
+// 🔥 PRODUCTION HEARTBEAT (Runs every 30s to prevent Render from killing the connection)
+const interval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) {
+      if (ws.userId) LIVE_USERS.delete(ws.userId);
+      return ws.terminate();
+    }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+wss.on('close', () => {
+  clearInterval(interval);
 });
 
 

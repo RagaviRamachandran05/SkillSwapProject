@@ -8,24 +8,41 @@ const Login = ({ setToken }) => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setLoading(true);
-  setError('');
-  
-  try {
-    const res = await axios.post('http://localhost:5000/api/auth/login', formData);
-    console.log('✅ LOGIN SUCCESS:', res.data.token ? 'Token received!' : 'NO TOKEN!');
-    localStorage.setItem('token', res.data.token);
-    setToken(res.data.token);
-    navigate('/dashboard');
-  } catch (err) {
-    console.log('❌ LOGIN ERROR:', err.response?.data);
-    setError(err.response?.data?.message || 'Login failed');
-  } finally {  // 🔥 ADD THIS LINE
-    setLoading(false);  // 🔥 THIS WAS MISSING
-  }
-};
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    
+    try {
+      // ✅ VERCEL-OPTIMIZED: Timeout + Headers for Render backend
+      const res = await axios.post('https://skillswap-backend.onrender.com/api/auth/login', formData, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: 15000 // 15s timeout (Render cold starts)
+      });
+      
+      console.log('✅ LOGIN SUCCESS:', res.data.token ? 'Token received!' : 'NO TOKEN!');
+      localStorage.setItem('token', res.data.token);
+      setToken(res.data.token);
+      navigate('/dashboard');
+    } catch (err) {
+      console.log('❌ LOGIN ERROR:', err.response?.data || err.message);
+      
+      // ✅ VERCEL-SPECIFIC ERROR HANDLING
+      if (err.code === 'ECONNABORTED') {
+        setError('Server slow. Please try again.');
+      } else if (err.response?.status === 429) {
+        setError('Too many requests. Wait 30 seconds.');
+      } else if (err.response?.status >= 500) {
+        setError('Server error. Backend waking up...');
+      } else {
+        setError(err.response?.data?.message || 'Login failed');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div style={{
@@ -149,6 +166,7 @@ const handleSubmit = async (e) => {
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               required
+              disabled={loading}  // ✅ VERCEL: Prevent double-submit
               style={{
                 width: '100%',
                 padding: '18px 24px',
@@ -160,14 +178,8 @@ const handleSubmit = async (e) => {
                 fontSize: '16px',
                 transition: 'all 0.3s ease'
               }}
-              onFocus={(e) => {
-                e.target.style.borderColor = 'rgba(0,212,255,0.8)';
-                e.target.style.boxShadow = '0 0 0 4px rgba(0,212,255,0.1)';
-              }}
-              onBlur={(e) => {
-                e.target.style.borderColor = 'rgba(0,212,255,0.4)';
-                e.target.style.boxShadow = 'none';
-              }}
+              onFocus={(e) => !loading && (e.target.style.borderColor = 'rgba(0,212,255,0.8)')}
+              onBlur={(e) => (e.target.style.borderColor = 'rgba(0,212,255,0.4)')}
             />
           </div>
 
@@ -188,6 +200,7 @@ const handleSubmit = async (e) => {
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               required
+              disabled={loading}  // ✅ VERCEL: Prevent double-submit
               style={{
                 width: '100%',
                 padding: '18px 24px',
@@ -199,14 +212,8 @@ const handleSubmit = async (e) => {
                 fontSize: '16px',
                 transition: 'all 0.3s ease'
               }}
-              onFocus={(e) => {
-                e.target.style.borderColor = 'rgba(0,212,255,0.8)';
-                e.target.style.boxShadow = '0 0 0 4px rgba(0,212,255,0.1)';
-              }}
-              onBlur={(e) => {
-                e.target.style.borderColor = 'rgba(0,212,255,0.4)';
-                e.target.style.boxShadow = 'none';
-              }}
+              onFocus={(e) => !loading && (e.target.style.borderColor = 'rgba(0,212,255,0.8)')}
+              onBlur={(e) => (e.target.style.borderColor = 'rgba(0,212,255,0.4)')}
             />
           </div>
 
@@ -217,7 +224,9 @@ const handleSubmit = async (e) => {
             style={{
               width: '100%',
               padding: '20px',
-              background: 'linear-gradient(135deg, #00d4ff, #0099cc)',
+              background: loading 
+                ? 'rgba(0,212,255,0.6)' 
+                : 'linear-gradient(135deg, #00d4ff, #0099cc)',
               color: 'white',
               border: 'none',
               borderRadius: '24px',
@@ -225,10 +234,8 @@ const handleSubmit = async (e) => {
               fontWeight: '700',
               cursor: loading ? 'not-allowed' : 'pointer',
               transition: 'all 0.3s ease',
-              boxShadow: '0 12px 32px rgba(0,212,255,0.4)'
+              boxShadow: loading ? 'none' : '0 12px 32px rgba(0,212,255,0.4)'
             }}
-            onMouseOver={(e) => !loading && (e.target.style.transform = 'translateY(-2px)')}
-            onMouseOut={(e) => !loading && (e.target.style.transform = 'translateY(0)')}
           >
             {loading ? (
               <>
@@ -243,13 +250,23 @@ const handleSubmit = async (e) => {
             )}
           </button>
         </form>
-<style>{`  
-@keyframes float { 
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-20px); }
-}
-@media (max-width: 768px) { ... }
-`}</style>
+
+        <style>{`
+          @keyframes float { 
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+          }
+          @media (max-width: 768px) {
+            div[style*="padding: 48px"] {
+              padding: 32px 24px;
+              margin: 16px;
+            }
+            h1[style*="fontSize: 40px"] {
+              font-size: 32px;
+            }
+          }
+        `}</style>
+
         {/* Register Link */}
         <div style={{ 
           textAlign: 'center', 
@@ -267,20 +284,12 @@ const handleSubmit = async (e) => {
                 textDecoration: 'none',
                 transition: 'all 0.3s ease'
               }}
-              onMouseOver={(e) => {
-                e.target.style.textShadow = '0 0 12px rgba(96,240,255,0.6)';
-              }}
-              onMouseOut={(e) => {
-                e.target.style.textShadow = 'none';
-              }}
             >
               Create Account →
             </Link>
           </p>
         </div>
       </div>
-
-      
     </div>
   );
 };

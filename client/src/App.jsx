@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { MeetingProvider } from '@videosdk.live/react-sdk';
+
 import { useState, useEffect } from 'react';
 import Login from './components/Login';
 import Register from './components/Register';

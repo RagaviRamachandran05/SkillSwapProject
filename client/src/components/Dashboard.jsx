@@ -1,28 +1,37 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react'; // ✅ Added useCallback
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import SkillsForm from './SkillsForm';
 
 const Dashboard = ({ token }) => {
-  const [activeChats, setActiveChats] = useState([]);
+  const API_BASE = 'https://skillswapproject.onrender.com';
+
+  
   const [skills, setSkills] = useState([]);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [newMessages, setNewMessages] = useState(0);
   const navigate = useNavigate();
 
-  // 🔥 FETCH ACTIVE CHATS
-  const fetchActiveChats = async () => {
+  // 🔥 FETCH ACTIVE CHATS - useCallback ✅
+
+  // 🔥 CHECK NEW MESSAGES - useCallback ✅
+  const checkNewMessages = useCallback(async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/requests/active-chats', {
+      const chatsRes = await axios.get(`${API_BASE}/api/requests/active-chats`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      console.log('✅ Active chats loaded:', res.data.activeChats?.length);
-      setActiveChats(res.data.activeChats || []);
+      const unreadCount = chatsRes.data.activeChats.reduce((total, chat) => {
+        const unread = chat.messages?.filter(msg => 
+          msg.sender?._id !== user?._id && !msg.read
+        ).length || 0;
+        return total + unread;
+      }, 0);
+      setNewMessages(unreadCount);
     } catch (err) {
-      console.error('Chats fetch failed:', err.response?.status);
+      console.error('New messages check failed:', err);
     }
-  };
+  }, [token, user?._id, API_BASE]);
 
   // 🔥 MAIN DATA FETCH
   useEffect(() => {
@@ -30,8 +39,8 @@ const Dashboard = ({ token }) => {
       const headers = { Authorization: `Bearer ${token}` };
       try {
         const [skillsRes, userRes] = await Promise.all([
-          axios.get('http://localhost:5000/api/skills', { headers }),
-          axios.get('http://localhost:5000/api/auth/me', { headers })
+          axios.get(`${API_BASE}/api/skills`, { headers }),
+          axios.get(`${API_BASE}/api/auth/me`, { headers })
         ]);
         setSkills(skillsRes.data);
         setUser(userRes.data);
@@ -43,52 +52,27 @@ const Dashboard = ({ token }) => {
       }
     };
     fetchData();
-  }, [token, navigate]);
+  }, [token, navigate, API_BASE]);
 
-  // 🔥 FIX #1: ACTIVE CHATS LOADING ✅
-  useEffect(() => {
-    fetchActiveChats();
-    const interval = setInterval(fetchActiveChats, 10000); // Refresh every 10s
-    return () => clearInterval(interval);
-  }, [token]);
+  // 🔥 ACTIVE CHATS INTERVAL - Fixed deps ✅
 
-  // 🔥 FIX #2: CORRECT UNREAD COUNT ✅
+  // 🔥 NEW MESSAGES INTERVAL - Fixed deps ✅
   useEffect(() => {
-    const checkNewMessages = async () => {
-      try {
-        const chatsRes = await axios.get('http://localhost:5000/api/requests/active-chats', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const unreadCount = chatsRes.data.activeChats.reduce((total, chat) => {
-          const unread = chat.messages?.filter(msg => 
-            msg.sender?._id !== user?._id && !msg.read
-          ).length || 0;
-          return total + unread;
-        }, 0);
-        setNewMessages(unreadCount);
-      } catch (err) {
-        console.error('New messages check failed:', err);
-      }
-    };
-    
+    if (!user?._id) return; // ✅ Prevent premature calls
     checkNewMessages();
     const interval = setInterval(checkNewMessages, 10000);
     return () => clearInterval(interval);
-  }, [token, user?._id]);
+  }, [checkNewMessages]);
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    navigate('/');
-  };
-
-  const handleEdit = (skill) => {
+  // 🔥 EDIT SKILL - useCallback ✅
+  const handleEdit = useCallback((skill) => {
     const newTitle = prompt('Edit skill title:', skill.title);
     const newDesc = prompt('Edit description:', skill.description);
     const newLevel = prompt('Edit level (Beginner/Intermediate/Advanced/Expert):', skill.level);
 
     if (newTitle && newDesc && newLevel) {
       axios
-        .put(`http://localhost:5000/api/skills/${skill._id}`, {
+        .put(`${API_BASE}/api/skills/${skill._id}`, {
           title: newTitle,
           description: newDesc,
           level: newLevel,
@@ -100,19 +84,26 @@ const Dashboard = ({ token }) => {
         })
         .catch(() => alert('Edit failed'));
     }
-  };
+  }, [token, skills, API_BASE]);
 
-  const handleDelete = async (skillId) => {
+  // 🔥 DELETE SKILL - useCallback ✅
+  const handleDelete = useCallback(async (skillId) => {
     if (!window.confirm('Delete this skill?')) return;
     try {
-      await axios.delete(`http://localhost:5000/api/skills/${skillId}`, {
+      await axios.delete(`${API_BASE}/api/skills/${skillId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setSkills(skills.filter((skill) => skill._id !== skillId));
     } catch (err) {
       alert('Delete failed');
     }
-  };
+  }, [token, skills, API_BASE]);
+
+  // 🔥 LOGOUT - useCallback ✅
+  const logout = useCallback(() => {
+    localStorage.removeItem('token');
+    navigate('/');
+  }, [navigate]);
 
   if (loading) {
     return (
@@ -302,8 +293,6 @@ const Dashboard = ({ token }) => {
             <SkillsForm setSkills={setSkills} token={token} />
           </div>
 
-          {/* 🔥 FIX #3: ACTIVE CHATS + CORRECT ROUTING ✅ */}
-  
           {/* SKILLS LIST */}
           <div>
             <div style={{
