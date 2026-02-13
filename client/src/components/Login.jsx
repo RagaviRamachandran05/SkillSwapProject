@@ -15,7 +15,7 @@ const Login = ({ setToken }) => {
     
     try {
       // ✅ VERCEL-OPTIMIZED: Timeout + Headers for Render backend
-      const res = await axios.post('https://skillswap-backend.onrender.com/api/auth/login', formData, {
+      const res = await axios.post('https://skillswapproject.onrender.com/api/auth/login', formData, {
         headers: {
           'Content-Type': 'application/json',
         },
