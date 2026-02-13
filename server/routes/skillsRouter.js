@@ -64,6 +64,41 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
+router.get('/smart-match', auth, async (req, res) => {
+  try {
+    const mySkills = await Skill.find({ userId: req.user.id });
+    const mySkillIds = mySkills.map(s => s._id);
+    
+    // 🔥 Find people who teach what I want + want what I teach
+    const matches = await Skill.aggregate([
+      { $match: { 
+        userId: { $ne: req.user.id },
+        title: { $in: mySkills.map(s => s.title) } // They teach what I know
+      }},
+      {
+        $lookup: {
+          from: 'skills',
+          let: { userId: '$userId' },
+          pipeline: [{ $match: { 
+            $expr: { $and: [
+              { $eq: ['$userId', '$$userId'] },
+              { $in: ['$title', mySkills.map(s => s.title)] }
+            ]}
+          }}],
+          as: 'theirSkills'
+        }
+      },
+      { $match: { 'theirSkills.0': { $exists: true } } }, // They want what I teach
+      { $limit: 10 }
+    ]);
+    
+    res.json(matches);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 // 🔥 UPDATE/DELETE (Dashboard)
 router.put('/:id', auth, async (req, res) => {
   try {

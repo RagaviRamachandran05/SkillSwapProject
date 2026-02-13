@@ -78,58 +78,47 @@ router.put('/:id/status', auth, async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     
-    console.log('🔄 PUT request:', { 
-      requestId: id, 
-      status, 
-      loggedInUserId: req.user.id,
-      tokenUserId: req.user.id 
-    });
+    console.log('🔄 Status update:', { id, status, user: req.user.id });
     
-    if (!['accepted', 'rejected'].includes(status)) {
-      return res.status(400).json({ message: 'Invalid status' });
-    }
+    const request = await Request.findById(id).populate('fromUser toUser');
+    if (!request) return res.status(404).json({ message: 'Request not found' });
     
-    const request = await Request.findById(id);
-    if (!request) {
-      console.log('❌ Request not found:', id);
-      return res.status(404).json({ message: 'Request not found' });
-    }
-    
-    // 🔥 CRITICAL DEBUG - Show ALL IDs
-    console.log('🔍 DEBUG INFO:');
-    console.log('   Request.toUser:', request.toUser);
-    console.log('   Request.toUser.toString():', request.toUser.toString());
-    console.log('   Logged in user:', req.user.id);
-    console.log('   MATCH?', request.toUser.toString() === req.user.id);
-    
-    // 🔥 MAIN FIX - More flexible auth check
-    const isReceiver = request.toUser.toString() === req.user.id;
-    console.log('🔍 Is receiver?', isReceiver);
-    
-    if (!isReceiver) {
-      console.log('❌ AUTH FAILED - User is not receiver');
-      return res.status(403).json({ 
-        message: 'Only the receiver can accept/reject requests',
-        debug: {
-          expectedReceiver: request.toUser.toString(),
-          actualUser: req.user.id,
-          isReceiver
-        }
-      });
+    if (request.toUser._id.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'Only receiver can update' });
     }
     
     request.status = status;
     await request.save();
     
-    console.log('✅ SUCCESS - Status updated to:', status);
-    res.json({ message: 'Success', status });
+    let chatRoomId = null;
     
+    // 🔥 CREATE CHAT IF ACCEPTED
+    if (status === 'accepted') {
+      const ChatRoom = require('../models/ChatRoom');  // Dynamic import
+      const chatRoom = new ChatRoom({
+        participants: [request.fromUser._id, request.toUser._id],
+        requestId: request._id,
+        messages: []
+      });
+      await chatRoom.save();
+      chatRoomId = chatRoom._id;
+      
+      console.log(`💬 CHAT CREATED: ${chatRoomId}`);
+    }
+    
+    res.json({ 
+      success: true, 
+      message: `Request ${status}!`,
+      chatRoomId,  // Only present if accepted
+      status 
+    });
   } catch (error) {
-    console.error('💥 FULL ERROR:', error);
-    console.error('💥 Stack:', error.stack);
-    res.status(500).json({ message: error.message });
+    console.error('STATUS ERROR:', error);
+    res.status(500).json({ error: error.message });
   }
 });
+
+
 
 // ADD this route to your authRouter.js (after /me route):
 router.get('/profile/:userId', auth, async (req, res) => {
@@ -160,6 +149,42 @@ router.get('/profile/:userId', auth, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/requests/active-chats
+// 🔥 ACTIVE CHATS ROUTE - FIXED VERSION
+router.get('/active-chats', auth, async (req, res) => {  // ✅ auth (not authenticateToken)
+  try {
+    console.log('🔍 Getting active chats for:', req.user.id);
+    
+    // Find accepted requests (received OR sent)
+    const requests = await Request.find({
+      $or: [
+        { toUser: req.user.id, status: 'accepted' },
+        { fromUser: req.user.id, status: 'accepted' }
+      ]
+    })
+    .populate('fromUser', 'name')
+    .populate('toUser', 'name')
+    .sort({ updatedAt: -1 });
+
+    // Format as WhatsApp chats
+    const activeChats = requests.map(request => ({  // ✅ request (not req)
+      _id: request._id,
+      participants: [
+        { _id: request.fromUser._id, name: request.fromUser.name },
+        { _id: request.toUser._id, name: request.toUser.name }
+      ],
+      messages: [],
+      updatedAt: request.updatedAt  // ✅ request.updatedAt
+    }));
+
+    console.log(`✅ ${activeChats.length} active chats found`);
+    res.json({ activeChats });
+  } catch (error) {
+    console.error('❌ Active chats error:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
