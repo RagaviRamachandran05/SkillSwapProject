@@ -27,8 +27,8 @@ const LiveChat = ({ token }) => {
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const ws = useRef(null);
-  const API_BASE = 'https://skillswap-backend.onrender.com';
-  const WS_URL = 'wss://skillswap-backend.onrender.com/ws';
+  const API_BASE = 'https://skillswapproject.onrender.com';
+  const WS_URL = 'wss://skillswapproject.onrender.com/ws';
 
   // 🔥 VIDEO TOKEN
   const startVideoLesson = useCallback(async () => {
@@ -76,6 +76,36 @@ const LiveChat = ({ token }) => {
     }
   }, [chatId, token, API_BASE]);
 
+// 🔥 MARK AS READ EFFECT
+// 🔥 MARK AS READ EFFECT (Refined)
+useEffect(() => {
+  const markAsRead = async () => {
+    if (!chatId || !token || messages.length === 0) return;
+
+    // Check if there are any unread messages sent by the PARTNER
+    const hasUnread = messages.some(msg => {
+      const senderId = msg.senderId || msg.sender?._id;
+      return senderId !== currentUserId && msg.read === false;
+    });
+
+    if (hasUnread) {
+      try {
+        await axios.put(`${API_BASE}/api/chat/${chatId}/read`, {}, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        // Update local state so bubbles disappear immediately without a refresh
+        setMessages(prev => prev.map(msg => ({ ...msg, read: true })));
+      } catch (err) {
+        console.error("❌ Failed to mark messages as read:", err);
+      }
+    }
+  };
+
+  markAsRead();
+}, [chatId, messages.length, currentUserId, token, API_BASE]);
+
+
   // 🔥 CURRENT USER
   useEffect(() => {
     try {
@@ -93,11 +123,19 @@ const LiveChat = ({ token }) => {
   }, [chatId, fetchChat]);
 
   // 🔥 SCROLL TO BOTTOM
-  const scrollToBottom = useCallback(() => {
-    if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+ const scrollToBottom = useCallback((force = false) => {
+  if (messagesContainerRef.current) {
+    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+    const isAtBottom = scrollHeight - scrollTop <= clientHeight + 150;
+
+    if (force || isAtBottom) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
     }
-  }, []);
+  }
+}, []);
 
   useEffect(() => {
     scrollToBottom();

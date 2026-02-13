@@ -11,8 +11,8 @@ const ChatRooms = ({ token }) => {
   const ws = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   
-  const API_BASE = 'https://skillswap-backend.onrender.com';
-  const WS_URL = 'wss://skillswap-backend.onrender.com/ws';
+  const API_BASE = 'https://skillswapproject.onrender.com';
+  const WS_URL = 'wss://skillswapproject.onrender.com/ws';
 
   // 🔥 Fetch active chats
   const fetchChatRooms = useCallback(async () => {
@@ -219,10 +219,9 @@ const ChatRooms = ({ token }) => {
             const isOnline = partner?._id && onlineUsers.has(partner._id);
             const messages = chat.messages || [];
             const lastMessage = messages[messages.length - 1];
-            const unreadCount = messages.filter(msg => 
-              msg.sender?._id !== currentUserId
-            ).length || 0;
-
+           const unreadCount = messages.filter(msg => 
+  msg.sender?._id !== currentUserId && msg.read === false
+).length;
             return (
               <div
                 key={chat._id}

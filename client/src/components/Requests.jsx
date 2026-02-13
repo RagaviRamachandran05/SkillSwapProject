@@ -12,7 +12,7 @@ const Requests = ({ token }) => {
   const [activeTab, setActiveTab] = useState('requests');
 
   // ✅ VERCEL: PRODUCTION BACKEND URL
-  const API_BASE = 'https://skillswap-backend.onrender.com/api';
+  const API_BASE = 'https://skillswapproject.onrender.com/api';
 
   useEffect(() => {
     fetchRequests();
