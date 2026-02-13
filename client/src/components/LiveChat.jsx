@@ -472,7 +472,7 @@ useEffect(() => {
                     )}
                   </div>
                   <small style={{ opacity: 0.6, fontSize: 12, textAlign: isOwnMessage ? "right" : "left", marginTop: 4 }}>
-                    {new Date(msg.timestamp || msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
+                    {new Date(msg.timestamp || msg.createdAt || Date.now()).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
                   </small>
                 </div>
               );
@@ -493,7 +493,7 @@ useEffect(() => {
                   </div>
                 </div>
                 <small style={{ opacity: 0.6, fontSize: 12, textAlign: isOwnMessage ? "right" : "left", marginTop: 4 }}>
-                  {new Date(msg.timestamp || msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
+                 {new Date(msg.timestamp || msg.createdAt || Date.now()).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
                 </small>
               </div>
             );
