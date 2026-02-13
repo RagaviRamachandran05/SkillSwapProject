@@ -210,9 +210,7 @@ const ChatRooms = ({ token }) => {
         ) : (
           chatRooms.map((chat) => {
             const participants = chat.participants || [chat.fromUser, chat.toUser].filter(Boolean);
-            const partner = participants.find(p => 
-              p?._id?.toString() !== currentUserId?.toString()
-            ) || 
+            const partner = participants.find(p => p?._id?.toString() !== currentUserId?.toString()) || 
             (chat.fromUser?._id?.toString() !== currentUserId?.toString() ? chat.fromUser : chat.toUser) ||
             { name: 'Partner', _id: 'unknown' };
             

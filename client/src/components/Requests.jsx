@@ -14,9 +14,7 @@ const Requests = ({ token }) => {
   // ✅ VERCEL: PRODUCTION BACKEND URL
   const API_BASE = 'https://skillswapproject.onrender.com/api';
 
-  useEffect(() => {
-    fetchRequests();
-  }, [fetchRequests,refreshKey, token]);
+  
 
   const fetchRequests = async () => {
     try {
@@ -36,7 +34,10 @@ const Requests = ({ token }) => {
       setLoading(false);
     }
   };
-
+  
+useEffect(() => {
+    fetchRequests();
+  }, [refreshKey, token]);
   // useEffect(() => {
   //   // ✅ CALCULATE after BOTH states update!
   //   setTotalRequests(sentRequests.length + receivedRequests.length);
